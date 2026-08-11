@@ -2,6 +2,14 @@
 
 Shizen is a premium natural heritage and wildlife conservation landing page built with Vite.
 
+## Preview
+
+![Shizen poster 1](public/poster-1.png)
+
+![Shizen poster 2](public/poster-2.png)
+
+![Shizen poster 3](public/poster-3.png)
+
 ## Features
 
 - Elegant, editorial-style hero section
