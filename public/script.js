@@ -1,238 +1,345 @@
 /* ===================================================================
-   SHIZEN — 自然 — Interactions & Animations
+   SHIZEN - Interactions, Navigation, Counters, Lightbox
    =================================================================== */
 
 (function () {
   "use strict";
 
-  /* ============ HELPERS ============ */
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
-  /* ============ NAVBAR SCROLL STATE ============ */
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   const navbar = $("#navbar");
   const scrollProgress = $("#scrollProgress");
-
-  const onScroll = () => {
-    const y = window.scrollY;
-    if (y > 40) navbar.classList.add("scrolled");
-    else navbar.classList.remove("scrolled");
-
-    const docH = document.documentElement.scrollHeight - window.innerHeight;
-    const pct = docH > 0 ? (y / docH) * 100 : 0;
-    scrollProgress.style.width = pct + "%";
-  };
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-
-  /* ============ MOBILE MENU ============ */
   const hamburger = $("#hamburger");
+  const navPanel = $("#navPanel");
   const navLinks = $("#navLinks");
   const navCta = $(".nav-cta");
+  const menuBackdrop = $("#menuBackdrop");
+  const heroParticles = $("#heroParticles");
+  const locName = $("#locName");
+  const yearEl = $("#year");
 
-  const closeMenu = () => {
-    hamburger.classList.remove("active");
-    navLinks.classList.remove("open");
-    if (navCta) navCta.classList.remove("open");
-    hamburger.setAttribute("aria-expanded", "false");
-    document.body.style.overflow = "";
+  const syncScrollState = () => {
+    const y = window.scrollY;
+    navbar?.classList.toggle("scrolled", y > 40);
+
+    if (scrollProgress) {
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      const pct = docH > 0 ? (y / docH) * 100 : 0;
+      scrollProgress.style.width = `${pct}%`;
+    }
   };
 
-  hamburger.addEventListener("click", () => {
-    const open = hamburger.classList.toggle("active");
-    navLinks.classList.toggle("open", open);
-    if (navCta) navCta.classList.toggle("open", open);
-    hamburger.setAttribute("aria-expanded", String(open));
-    document.body.style.overflow = open ? "hidden" : "";
+  window.addEventListener("scroll", syncScrollState, { passive: true });
+  syncScrollState();
+
+  const state = {
+    menuOpen: false,
+    lightboxOpen: false,
+  };
+
+  let closeLightbox = () => {};
+  let restoreMenuFocus = null;
+  let restoreLightboxFocus = null;
+
+  const syncBodyLock = () => {
+    document.body.classList.toggle("menu-open", state.menuOpen);
+    document.body.style.overflow = state.menuOpen || state.lightboxOpen ? "hidden" : "";
+  };
+
+  const getFocusable = (root) =>
+    $$(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      root
+    ).filter((el) => !el.hidden && el.offsetParent !== null);
+
+  const closeMenu = () => {
+    if (!hamburger || !navLinks) return;
+    state.menuOpen = false;
+    hamburger.classList.remove("active");
+    navPanel?.classList.remove("open");
+    hamburger.setAttribute("aria-expanded", "false");
+    hamburger.setAttribute("aria-label", "Open menu");
+    if (menuBackdrop) menuBackdrop.hidden = true;
+    syncBodyLock();
+    restoreMenuFocus?.focus({ preventScroll: true });
+  };
+
+  const openMenu = () => {
+    if (!hamburger || !navPanel) return;
+    state.menuOpen = true;
+    restoreMenuFocus = document.activeElement instanceof HTMLElement ? document.activeElement : hamburger;
+    hamburger.classList.add("active");
+    navPanel.classList.add("open");
+    hamburger.setAttribute("aria-expanded", "true");
+    hamburger.setAttribute("aria-label", "Close menu");
+    if (menuBackdrop) menuBackdrop.hidden = false;
+    syncBodyLock();
+    const firstLink = $(".nav-link", navPanel);
+    firstLink?.focus({ preventScroll: true });
+  };
+
+  hamburger?.addEventListener("click", () => {
+    if (state.menuOpen) closeMenu();
+    else openMenu();
   });
 
-  $$(".nav-links a").forEach((a) => a.addEventListener("click", closeMenu));
+  menuBackdrop?.addEventListener("click", closeMenu);
 
-  /* ============ SMOOTH SCROLL OFFSET ============ */
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || !state.menuOpen || !navPanel) return;
+    const focusables = getFocusable(navPanel);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  const closeOnEscape = (event) => {
+    if (event.key === "Escape") {
+      if (state.lightboxOpen) {
+        closeLightbox();
+        return;
+      }
+      if (state.menuOpen) closeMenu();
+    }
+  };
+
+  document.addEventListener("keydown", closeOnEscape);
+
+  $$(".nav-panel a").forEach((link) => {
+    link.addEventListener("click", closeMenu);
+  });
+
   $$('a[href^="#"]').forEach((link) => {
-    link.addEventListener("click", (e) => {
-      const id = link.getAttribute("href");
-      if (id === "#" || id.length < 2) return;
-      const target = $(id);
+    link.addEventListener("click", (event) => {
+      const href = link.getAttribute("href");
+      if (!href || href === "#") return;
+
+      const target = $(href);
       if (!target) return;
-      e.preventDefault();
-      const top = target.getBoundingClientRect().top + window.scrollY - 70;
-      window.scrollTo({ top, behavior: "smooth" });
+
+      event.preventDefault();
+      const offset = 76;
+      const top = target.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top, behavior: prefersReducedMotion ? "auto" : "smooth" });
     });
   });
 
-  /* ============ SCROLL REVEAL ============ */
   const revealEls = $$(".reveal");
-  const io = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+  const revealNow = (el) => el.classList.add("visible");
+
+  if (prefersReducedMotion) {
+    revealEls.forEach(revealNow);
+  } else {
+    const revealIO = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
           const el = entry.target;
           const delay = el.dataset.delay ? (parseInt(el.dataset.delay, 10) - 1) * 120 : 0;
-          setTimeout(() => el.classList.add("visible"), delay);
-          io.unobserve(el);
-        }
-      });
-    },
-    { threshold: 0.12, rootMargin: "0px 0px -60px 0px" }
-  );
-  revealEls.forEach((el) => io.observe(el));
+          window.setTimeout(() => el.classList.add("visible"), delay);
+          observer.unobserve(el);
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -60px 0px" }
+    );
+    revealEls.forEach((el) => revealIO.observe(el));
+  }
 
-  /* ============ ANIMATED COUNTERS ============ */
   const counters = $$("[data-count]");
 
-  const animateCount = (el) => {
-    const target = parseFloat(el.dataset.count);
+  const setCounterFinal = (el) => {
+    const target = Number.parseFloat(el.dataset.count || "0");
     const suffix = el.dataset.suffix || "";
-    const isDecimal = target % 1 !== 0;
+    const value = Number.isInteger(target) ? String(target) : target.toFixed(1);
+    el.textContent = `${value}${suffix}`;
+  };
+
+  const animateCount = (el) => {
+    const target = Number.parseFloat(el.dataset.count || "0");
+    const suffix = el.dataset.suffix || "";
+    const isDecimal = !Number.isInteger(target);
     const duration = 1800;
     const start = performance.now();
+    const parent = el.closest(".stat-item, .impact-stat");
+
+    parent?.classList.add("is-counted");
+    el.textContent = "0";
 
     const step = (now) => {
       const t = Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - t, 3);
-      const val = target * eased;
-      el.textContent = (isDecimal ? val.toFixed(1) : Math.round(val)) + suffix;
-      if (t < 1) requestAnimationFrame(step);
-      else el.textContent = (isDecimal ? target.toFixed(1) : target) + suffix;
+      const raw = target * eased;
+      const value = isDecimal ? raw.toFixed(1) : Math.round(raw);
+      el.textContent = `${value}${suffix}`;
+
+      if (t < 1) {
+        requestAnimationFrame(step);
+        return;
+      }
+
+      setCounterFinal(el);
     };
+
     requestAnimationFrame(step);
   };
 
-  const counterIO = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+  if (prefersReducedMotion) {
+    counters.forEach((el) => {
+      setCounterFinal(el);
+      el.closest(".stat-item, .impact-stat")?.classList.add("is-counted");
+    });
+  } else {
+    const counterIO = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
           animateCount(entry.target);
-          counterIO.unobserve(entry.target);
-        }
-      });
-    },
-    { threshold: 0.5 }
-  );
-  counters.forEach((c) => counterIO.observe(c));
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.4 }
+    );
+    counters.forEach((el) => counterIO.observe(el));
+  }
 
-  /* ============ HERO PARTICLES ============ */
-  const particleContainer = $("#heroParticles");
-  if (particleContainer) {
-    const count = window.innerWidth < 600 ? 12 : 22;
-    for (let i = 0; i < count; i++) {
-      const p = document.createElement("span");
-      p.className = "particle";
-      p.style.left = Math.random() * 100 + "%";
-      p.style.bottom = Math.random() * 20 + "%";
-      p.style.animationDuration = 9 + Math.random() * 10 + "s";
-      p.style.animationDelay = Math.random() * 8 + "s";
-      p.style.opacity = 0.25 + Math.random() * 0.4;
-      p.style.transform = `scale(${0.5 + Math.random() * 1})`;
-      particleContainer.appendChild(p);
+  if (heroParticles && !prefersReducedMotion) {
+    const particleCount = window.innerWidth < 900 ? 0 : 10;
+    for (let i = 0; i < particleCount; i += 1) {
+      const particle = document.createElement("span");
+      particle.className = "particle";
+      particle.style.left = `${Math.random() * 100}%`;
+      particle.style.bottom = `${Math.random() * 20}%`;
+      particle.style.animationDuration = `${9 + Math.random() * 10}s`;
+      particle.style.animationDelay = `${Math.random() * 8}s`;
+      particle.style.opacity = `${0.25 + Math.random() * 0.4}`;
+      particle.style.transform = `scale(${0.5 + Math.random()})`;
+      heroParticles.appendChild(particle);
     }
   }
 
-  /* ============ HERO LOCATION ROTATION ============ */
-  const locations = [
-    "Borneo Rainforest, Indonesia",
-    "Great Barrier Reef, Australia",
-    "Amazon Basin, Brazil",
-    "Arctic Tundra, Norway",
-    "Serengeti Plains, Tanzania",
-    "Himalayan Foothills, Nepal",
-  ];
-  const locName = $("#locName");
-  if (locName) {
-    let idx = 0;
-    setInterval(() => {
+  if (locName && !prefersReducedMotion && window.innerWidth >= 900) {
+    const locations = [
+      "Borneo Rainforest, Indonesia",
+      "Great Barrier Reef, Australia",
+      "Amazon Basin, Brazil",
+      "Arctic Tundra, Norway",
+      "Serengeti Plains, Tanzania",
+      "Himalayan Foothills, Nepal",
+    ];
+
+    let index = 0;
+    window.setInterval(() => {
       locName.style.opacity = "0";
       locName.style.transform = "translateY(-4px)";
-      setTimeout(() => {
-        idx = (idx + 1) % locations.length;
-        locName.textContent = locations[idx];
+      window.setTimeout(() => {
+        index = (index + 1) % locations.length;
+        locName.textContent = locations[index];
         locName.style.opacity = "1";
         locName.style.transform = "translateY(0)";
-      }, 400);
+      }, 350);
     }, 3800);
   }
 
-  /* ============ FAQ ACCORDION ============ */
   $$(".acc-item").forEach((item) => {
     const header = $(".acc-header", item);
     const body = $(".acc-body", item);
-    header.addEventListener("click", () => {
+
+    header?.addEventListener("click", () => {
       const isOpen = item.classList.contains("open");
+
       $$(".acc-item").forEach((other) => {
         other.classList.remove("open");
-        $(".acc-body", other).style.maxHeight = null;
-        $(".acc-header", other).setAttribute("aria-expanded", "false");
+        const otherBody = $(".acc-body", other);
+        const otherHeader = $(".acc-header", other);
+        if (otherBody) otherBody.style.maxHeight = null;
+        otherHeader?.setAttribute("aria-expanded", "false");
       });
-      if (!isOpen) {
+
+      if (!isOpen && body) {
         item.classList.add("open");
-        body.style.maxHeight = body.scrollHeight + "px";
+        body.style.maxHeight = `${body.scrollHeight}px`;
         header.setAttribute("aria-expanded", "true");
       }
     });
   });
 
-  /* ============ CONTACT FORM ============ */
-  const contactForm = $("#contactForm");
-  const contactStatus = $("#contactStatus");
-
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const validateField = (field) => {
-    if (field.required && !field.value.trim()) {
-      field.classList.add("invalid");
-      return false;
+    const value = field.value.trim();
+    let valid = true;
+
+    if (field.required && !value) {
+      valid = false;
+    } else if (field.type === "email" && value && !emailRe.test(value)) {
+      valid = false;
     }
-    if (field.type === "email" && !emailRe.test(field.value.trim())) {
-      field.classList.add("invalid");
-      return false;
-    }
-    field.classList.remove("invalid");
-    return true;
+
+    field.classList.toggle("invalid", !valid);
+    return valid;
   };
 
-  if (contactForm) {
-    contactForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const fields = $$("input, textarea", contactForm);
-      let valid = true;
-      fields.forEach((f) => { if (!validateField(f)) valid = false; });
+  const contactForm = $("#contactForm");
+  const contactStatus = $("#contactStatus");
 
-      if (!valid) {
+  contactForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const fields = $$("input, textarea, select", contactForm);
+    const valid = fields.every((field) => validateField(field));
+
+    if (!valid) {
+      if (contactStatus) {
         contactStatus.textContent = "Please complete all fields with a valid email.";
         contactStatus.className = "form-status error";
-        return;
       }
-      contactStatus.textContent = "Thank you — your message has been received. We'll be in touch soon.";
-      contactStatus.className = "form-status success";
-      contactForm.reset();
-    });
+      return;
+    }
 
-    $$("input, textarea", contactForm).forEach((f) => {
-      f.addEventListener("blur", () => validateField(f));
-      f.addEventListener("input", () => f.classList.remove("invalid"));
+    if (contactStatus) {
+      contactStatus.textContent = "Thank you - your message has been received. We'll be in touch soon.";
+      contactStatus.className = "form-status success";
+    }
+    contactForm.reset();
+  });
+
+  if (contactForm) {
+    $$("input, textarea, select", contactForm).forEach((field) => {
+      field.addEventListener("blur", () => validateField(field));
+      field.addEventListener("input", () => field.classList.remove("invalid"));
     });
   }
 
-  /* ============ NEWSLETTER FORMS ============ */
   const setupNewsletter = (formId, inputId, statusId) => {
-    const form = $("#" + formId);
-    const input = $("#" + inputId);
-    const status = $("#" + statusId);
-    if (!form) return;
+    const form = $(`#${formId}`);
+    const input = $(`#${inputId}`);
+    const status = $(`#${statusId}`);
 
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const val = input.value.trim();
-      if (!emailRe.test(val)) {
+    if (!form || !input || !status) return;
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = input.value.trim();
+
+      if (!emailRe.test(value)) {
         input.classList.add("invalid");
         status.textContent = "Please enter a valid email address.";
-        status.className = status.className.replace("success", "") + " error";
+        status.className = "nl-status error";
         return;
       }
+
       input.classList.remove("invalid");
       status.textContent = "You're subscribed. Welcome to the Shizen community.";
-      status.className = status.className.replace("error", "") + " success";
+      status.className = "nl-status success";
       form.reset();
     });
 
@@ -242,59 +349,147 @@
   setupNewsletter("newsletterForm", "nlEmail", "nlStatus");
   setupNewsletter("footerNL", "fnlEmail", "fnlStatus");
 
-  /* ============ PARALLAX ON HERO ============ */
-  const heroBg = $(".hero-bg");
-  if (heroBg && window.matchMedia("(pointer: fine)").matches) {
-    window.addEventListener("scroll", () => {
-      const y = window.scrollY;
-      if (y < window.innerHeight) {
-        heroBg.style.transform = `translateY(${y * 0.35}px) scale(1.1)`;
-      }
-    }, { passive: true });
-  }
-
-  /* ============ FOOTER YEAR ============ */
-  const yearEl = $("#year");
-  if (yearEl) yearEl.textContent = new Date().getFullYear();
-
-  /* ============ ANIMATED PROGRESS BARS ============ */
   const projectCards = $$(".project-card");
-  const progressIO = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+  if (!prefersReducedMotion) {
+    const progressIO = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
           const bar = $(".progress-bar span", entry.target);
           if (bar) {
-            const w = bar.style.width;
+            const width = bar.style.width;
             bar.style.width = "0%";
             requestAnimationFrame(() => {
-              setTimeout(() => { bar.style.width = w; }, 100);
+              window.setTimeout(() => {
+                bar.style.width = width;
+              }, 100);
             });
           }
-          progressIO.unobserve(entry.target);
-        }
-      });
-    },
-    { threshold: 0.3 }
-  );
-  projectCards.forEach((c) => progressIO.observe(c));
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.3 }
+    );
+    projectCards.forEach((card) => progressIO.observe(card));
+  }
 
-  /* ============ ACTIVE NAV STATE ON SCROLL ============ */
   const sections = $$("main section[id]");
   const navLinkEls = $$(".nav-link");
 
   const navIO = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const id = entry.target.id;
-          navLinkEls.forEach((link) => {
-            link.classList.toggle("active", link.getAttribute("href") === "#" + id);
-          });
-        }
+        if (!entry.isIntersecting) return;
+        const id = entry.target.id;
+        navLinkEls.forEach((link) => {
+          link.classList.toggle("active", link.getAttribute("href") === `#${id}`);
+        });
       });
     },
     { threshold: 0.35, rootMargin: "-80px 0px -50% 0px" }
   );
-  sections.forEach((s) => navIO.observe(s));
+  sections.forEach((section) => navIO.observe(section));
+
+  if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
+  /* ============ GALLERY LIGHTBOX ============ */
+  const lightbox = $("#lightbox");
+  const lightboxImage = $("#lightboxImage");
+  const lightboxCaption = $("#lightboxCaption");
+  const galleryItems = $$(".gallery-item");
+
+  if (lightbox && lightboxImage && lightboxCaption && galleryItems.length) {
+    const slides = galleryItems.map((item) => {
+      const image = $("img", item);
+      const figcaption = $("figcaption", item);
+      const primary = figcaption ? $("span", figcaption)?.textContent?.trim() : "";
+      const secondary = figcaption ? $(".cap-loc", figcaption)?.textContent?.trim() : "";
+
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-label", primary ? `Open image: ${primary}` : "Open image");
+
+      return {
+        src: image?.src || "",
+        alt: image?.alt || primary || "Gallery image",
+        caption: [primary, secondary].filter(Boolean).join(" · "),
+      };
+    });
+
+    let currentIndex = 0;
+    const renderSlide = (index) => {
+      const slide = slides[index];
+      if (!slide) return;
+      lightboxImage.src = slide.src;
+      lightboxImage.alt = slide.alt;
+      lightboxCaption.textContent = slide.caption;
+    };
+
+    const openLightbox = (index) => {
+      currentIndex = index;
+      restoreLightboxFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      renderSlide(currentIndex);
+      lightbox.hidden = false;
+      lightbox.setAttribute("aria-hidden", "false");
+      state.lightboxOpen = true;
+      syncBodyLock();
+      $(".lightbox-close", lightbox)?.focus({ preventScroll: true });
+    };
+
+    closeLightbox = () => {
+      lightbox.hidden = true;
+      lightbox.setAttribute("aria-hidden", "true");
+      state.lightboxOpen = false;
+      syncBodyLock();
+      if (restoreLightboxFocus instanceof HTMLElement) {
+        restoreLightboxFocus.focus({ preventScroll: true });
+      }
+    };
+
+    const go = (delta) => {
+      currentIndex = (currentIndex + delta + slides.length) % slides.length;
+      renderSlide(currentIndex);
+    };
+
+    galleryItems.forEach((item, index) => {
+      const open = () => openLightbox(index);
+      item.addEventListener("click", open);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
+
+    $(".lightbox-close", lightbox)?.addEventListener("click", closeLightbox);
+    $(".lightbox-prev", lightbox)?.addEventListener("click", () => go(-1));
+    $(".lightbox-next", lightbox)?.addEventListener("click", () => go(1));
+
+    lightbox.addEventListener("click", (event) => {
+      if (event.target === lightbox) {
+        closeLightbox();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (!state.lightboxOpen) return;
+      if (event.key === "Tab") {
+        const focusables = getFocusable(lightbox);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      if (event.key === "ArrowLeft") go(-1);
+      if (event.key === "ArrowRight") go(1);
+    });
+
+  }
 })();
