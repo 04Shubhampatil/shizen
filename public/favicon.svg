@@ -1,0 +1,28 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shizen favicon">
+  <title>Shizen favicon</title>
+  <circle cx="512" cy="512" r="456" fill="#0B3D2E"/>
+  <circle cx="512" cy="512" r="456" stroke="#C9A45C" stroke-width="12"/>
+
+  <path
+    d="M 675 296
+       C 646 231 552 198 460 218
+       C 366 238 314 309 336 382
+       C 354 439 423 467 496 486
+       C 584 510 652 527 676 592
+       C 703 665 643 728 547 752
+       C 434 779 321 744 272 655"
+    stroke="#F5F1E6"
+    stroke-width="122"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+
+  <path
+    d="M 630 266
+       C 666 242 717 249 742 286
+       C 710 311 676 343 640 382
+       C 612 362 602 319 630 266 Z"
+    fill="#167A5A"
+  />
+</svg>
